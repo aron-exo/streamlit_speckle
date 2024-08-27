@@ -1,44 +1,44 @@
 import streamlit as st
-import os
+from specklepy.api.client import SpeckleClient
+from specklepy.api.credentials import Account
 
-# Title of the app
-st.title("IFC File Viewer using IFC.js")
+# Access secrets
+speckle_token = st.secrets["speckle_token"]
+speckle_host = "https://app.speckle.systems/"
 
-# File uploader to allow users to upload an IFC file
-uploaded_file = st.file_uploader("Choose an IFC file", type=["ifc"])
+# Set up Speckle client
+client = SpeckleClient(host=speckle_host)
 
-if uploaded_file is not None:
-    # Save the uploaded file temporarily
-    temp_ifc_path = os.path.join(os.getcwd(), "temp.ifc")
-    with open(temp_ifc_path, "wb") as f:
-        f.write(uploaded_file.getbuffer())
 
-    # HTML and JavaScript to load and display the IFC file using IFC.js
-    html_code = f"""
-    <html>
-    <head>
-        <script src="https://cdn.jsdelivr.net/npm/ifc.js@0.0.145/dist/IFC.min.js"></script>
-    </head>
-    <body>
-        <div id="ifc-container" style="width: 100%; height: 600px;"></div>
-        <script>
-            async function loadIFC() {{
-                const container = document.getElementById('ifc-container');
-                const ifcLoader = new IfcLoader();
-                const model = await ifcLoader.load('{temp_ifc_path}');
-                container.appendChild(model);
-            }}
-            loadIFC();
-        </script>
-    </body>
-    </html>
-    """
 
-    # Display the HTML and JavaScript in the Streamlit app
-    st.components.v1.html(html_code, height=600)
+client.authenticate_with_token(speckle_token)
 
-    # Optional: Clean up the temporary IFC file after it's loaded
-    if os.path.exists(temp_ifc_path):
-        os.remove(temp_ifc_path)
-else:
-    st.write("Please upload an IFC file to view it.")
+# Fetch streams
+streams = client.stream.list()
+stream_names = [stream.name for stream in streams]
+stream_dict = {stream.name: stream.id for stream in streams}
+
+st.title("Speckle Viewer in Streamlit")
+
+# Stream selection dropdown
+selected_stream = st.selectbox("Select a Stream", stream_names)
+
+if selected_stream:
+    stream_id = stream_dict[selected_stream]
+    
+    # Fetch commits for the selected stream
+    commits = client.commit.list(stream_id)
+    commit_messages = [commit.message for commit in commits]
+    commit_dict = {commit.message: commit.id for commit in commits}
+    
+    # Commit selection dropdown
+    selected_commit = st.selectbox("Select a Commit", commit_messages)
+    
+    if selected_commit:
+        commit_id = commit_dict[selected_commit]
+        
+        speckle_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit_id}"
+        
+        st.markdown(f"""
+        <iframe src="{speckle_url}" width="100%" height="600px" frameborder="0"></iframe>
+        """, unsafe_allow_html=True)
