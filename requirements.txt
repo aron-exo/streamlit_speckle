@@ -1,4 +1,4 @@
-ifcopenshell==0.7.10
+ifcopenshell==0.7.11
 streamlit==1.37.1
 pandas==2.0.3
 plotly==5.15.0
