@@ -1,3 +1,10 @@
 procps
 libgl1-mesa-glx
 xvfb
+build-essential
+libxml2-dev
+libxslt-dev
+cmake
+occt-draw
+libocct-data-exchange-dev
+libocct-ocaf-dev
