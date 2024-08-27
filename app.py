@@ -1,5 +1,6 @@
 import streamlit as st
 from streamlit_javascript import st_javascript
+import os
 
 def main():
     st.set_page_config(page_title="IFC Viewer", layout="wide")
@@ -12,6 +13,10 @@ def main():
         # Save the uploaded file temporarily
         with open("temp.ifc", "wb") as f:
             f.write(uploaded_file.getvalue())
+        
+        # Debug info
+        st.write(f"File uploaded: {uploaded_file.name}")
+        st.write(f"File size: {os.path.getsize('temp.ifc')} bytes")
 
         # HTML and JavaScript for IFC viewer
         viewer_html = """
@@ -24,9 +29,14 @@ def main():
             viewer.IFC.setWasmPath("https://unpkg.com/web-ifc@0.0.36/");
             
             async function loadIFC() {
-                const model = await viewer.IFC.loadIfcUrl("temp.ifc");
-                viewer.shadowDropper.renderShadow(model.modelID);
-                viewer.context.renderer.postProduction.active = true;
+                try {
+                    const model = await viewer.IFC.loadIfcUrl("temp.ifc");
+                    viewer.shadowDropper.renderShadow(model.modelID);
+                    viewer.context.renderer.postProduction.active = true;
+                    console.log("IFC model loaded successfully");
+                } catch (error) {
+                    console.error("Error loading IFC model:", error);
+                }
             }
             
             loadIFC();
@@ -35,6 +45,15 @@ def main():
 
         # Render the viewer
         st.components.v1.html(viewer_html, height=600)
+
+        # Add JavaScript to log any errors
+        st.components.v1.html("""
+        <script>
+            window.onerror = function(message, source, lineno, colno, error) {
+                console.error("JavaScript error:", message, "at", source, ":", lineno);
+            }
+        </script>
+        """)
 
 if __name__ == "__main__":
     main()
