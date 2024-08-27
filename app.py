@@ -1,40 +1,78 @@
 import streamlit as st
 import ifcopenshell
 import pyvista as pv
-from pyvista import examples
+import tempfile
+import numpy as np
 
-# Set up the Streamlit app
-st.title("IFC File Viewer")
+def load_ifc_file(file):
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.ifc') as tmp_file:
+        tmp_file.write(file.getvalue())
+        tmp_file_path = tmp_file.name
+    return ifcopenshell.open(tmp_file_path)
 
-# File uploader for IFC files
-uploaded_file = st.file_uploader("Choose an IFC file", type=["ifc"])
+def extract_geometry(product):
+    if product.Representation:
+        for representation in product.Representation.Representations:
+            for item in representation.Items:
+                if item.is_a('IfcExtrudedAreaSolid'):
+                    return extract_extruded_area_solid(item)
+    return None
 
-if uploaded_file is not None:
-    # Load the IFC file
-    model = ifcopenshell.open(uploaded_file)
+def extract_extruded_area_solid(item):
+    profile = item.SweptArea
+    if profile.is_a('IfcRectangleProfileDef'):
+        width = profile.XDim
+        depth = profile.YDim
+        extrusion_depth = item.Depth
+        vertices = [
+            (0, 0, 0),
+            (width, 0, 0),
+            (width, depth, 0),
+            (0, depth, 0),
+            (0, 0, extrusion_depth),
+            (width, 0, extrusion_depth),
+            (width, depth, extrusion_depth),
+            (0, depth, extrusion_depth)
+        ]
+        faces = [
+            [0, 1, 2, 3],
+            [4, 5, 6, 7],
+            [0, 4, 7, 3],
+            [1, 5, 6, 2],
+            [0, 1, 5, 4],
+            [3, 2, 6, 7]
+        ]
+        return vertices, faces
+    return None
 
-    # Extract geometries
-    products = model.by_type("IfcProduct")
+def main():
+    st.title("IFC File Viewer")
 
-    # Initialize PyVista plotter
-    plotter = pv.Plotter()
+    uploaded_file = st.file_uploader("Choose an IFC file", type=["ifc"])
 
-    # Iterate over the products to extract and visualize geometry
-    for product in products:
-        shape = product.Representation.Representations[0].Items[0]
-        if shape.is_a("IfcFacetedBrep"):
-            vertices = shape.Outer.CfsFaces[0].Bound.VertexLoop[0].Vertex.Point.Coordinates
-            vertices = [list(map(float, v)) for v in vertices]
-            faces = shape.Outer.CfsFaces
-            face_indices = []
-            for face in faces:
-                loop = face.Bound.Loop
-                indices = [product.Representation.Representations[0].Items.index(loop)]
-                face_indices.append(indices)
-            
-            # Create a mesh for visualization
-            mesh = pv.PolyData(vertices, face_indices)
-            plotter.add_mesh(mesh, show_edges=True, color='white')
+    if uploaded_file is not None:
+        model = load_ifc_file(uploaded_file)
 
-    # Show the visualization in Streamlit
-    st.pyplot(plotter.show(screenshot=True))
+        products = model.by_type("IfcProduct")
+
+        plotter = pv.Plotter()
+
+        for product in products:
+            geometry = extract_geometry(product)
+            if geometry:
+                vertices, faces = geometry
+                mesh = pv.PolyData(vertices, faces)
+                plotter.add_mesh(mesh, show_edges=True, color='lightblue')
+
+        # Set camera position
+        plotter.camera_position = 'xy'
+        plotter.camera.zoom(1.5)
+
+        # Render the plot as an image
+        image = plotter.screenshot()
+        
+        # Display the image in Streamlit
+        st.image(image, caption='IFC Model Visualization', use_column_width=True)
+
+if __name__ == "__main__":
+    main()
