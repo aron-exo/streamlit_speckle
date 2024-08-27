@@ -1,51 +1,41 @@
 import streamlit as st
 import ifcopenshell
-import pandas as pd
-import plotly.graph_objects as go
+import json
+from streamlit_javascript import st_javascript
 
 def load_ifc_file(file):
     return ifcopenshell.open(file)
 
-def get_products(ifc_file):
-    return ifc_file.by_type("IfcProduct")
+def get_3d_data(ifc_file):
+    # This function would convert IFC geometry to a format suitable for web 3D visualization
+    # For example, it might return a glTF or JSON representation of the 3D data
+    pass
 
-def filter_products(products):
-    return [p for p in products if p.Representation is not None and 
-            not p.is_a("IfcOpeningElement") and 
-            not p.is_a("IfcSite") and 
-            not p.is_a("IfcAnnotation")]
-
-def get_product_data(product):
-    return {
-        "id": product.id(),
-        "type": product.is_a(),
-        "name": product.Name,
-        "guid": product.GlobalId
-    }
+def get_metadata(ifc_file, guid):
+    product = ifc_file.by_guid(guid)
+    attributes = {attr: getattr(product, attr) for attr in dir(product) if not attr.startswith("_")}
+    # Add logic to get properties and materials similar to the original script
+    return attributes
 
 def main():
-    st.title("IFC File Viewer")
+    st.title("IFC Viewer")
 
     uploaded_file = st.file_uploader("Choose an IFC file", type="ifc")
 
     if uploaded_file is not None:
         ifc_file = load_ifc_file(uploaded_file)
-        products = get_products(ifc_file)
-        filtered_products = filter_products(products)
-
-        st.write(f"Total products: {len(products)}")
-        st.write(f"Products with 3D representation: {len(filtered_products)}")
-
-        product_data = [get_product_data(p) for p in filtered_products]
-        df = pd.DataFrame(product_data)
-
-        st.subheader("Product Data")
-        st.dataframe(df)
-
-        st.subheader("Product Types Distribution")
-        type_counts = df['type'].value_counts()
-        fig = go.Figure(data=[go.Pie(labels=type_counts.index, values=type_counts.values)])
-        st.plotly_chart(fig)
+        
+        # Get 3D data and pass it to the frontend
+        three_d_data = get_3d_data(ifc_file)
+        st.write("3D Viewer would be here")  # Placeholder for 3D viewer
+        
+        # Use st_javascript to handle 3D selection events
+        selected_guid = st_javascript("/* JavaScript code to handle 3D selection and return GUID */")
+        
+        if selected_guid:
+            metadata = get_metadata(ifc_file, selected_guid)
+            st.subheader("Element Metadata")
+            st.table(metadata)
 
 if __name__ == "__main__":
     main()
