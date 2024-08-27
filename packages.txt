@@ -1,2 +1,3 @@
-libvtk7-dev
-libvtk7.1
+procps
+libgl1-mesa-glx
+xvfb
