@@ -1,6 +1,6 @@
 import streamlit as st
 import os
-import uuid
+import base64
 
 def main():
     st.set_page_config(page_title="IFC Viewer", layout="wide")
@@ -10,20 +10,15 @@ def main():
     uploaded_file = st.file_uploader("Choose an IFC file", type="ifc")
 
     if uploaded_file is not None:
-        # Generate a unique filename
-        file_id = uuid.uuid4()
-        file_path = f"temp_{file_id}.ifc"
-        
-        # Save the uploaded file temporarily
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getvalue())
+        # Read file content
+        file_content = uploaded_file.getvalue()
         
         # Debug info
         st.write(f"File uploaded: {uploaded_file.name}")
-        st.write(f"File size: {os.path.getsize(file_path)} bytes")
+        st.write(f"File size: {len(file_content)} bytes")
 
-        # Get the URL for the uploaded file
-        file_url = st.get_serve_file_url(file_path)
+        # Encode file content to base64
+        file_content_base64 = base64.b64encode(file_content).decode()
 
         # HTML and JavaScript for IFC viewer
         viewer_html = f"""
@@ -37,7 +32,9 @@ def main():
             
             async function loadIFC() {{
                 try {{
-                    const model = await viewer.IFC.loadIfcUrl("{file_url}");
+                    const ifcData = atob("{file_content_base64}");
+                    const ifcBlob = new Blob([ifcData], {{type: 'application/octet-stream'}});
+                    const model = await viewer.IFC.loadIfcFile(ifcBlob);
                     viewer.shadowDropper.renderShadow(model.modelID);
                     viewer.context.renderer.postProduction.active = true;
                     console.log("IFC model loaded successfully");
@@ -63,9 +60,6 @@ def main():
             }
         </script>
         """)
-
-        # Clean up the temporary file
-        os.remove(file_path)
 
 if __name__ == "__main__":
     main()
