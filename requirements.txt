@@ -1,3 +1,4 @@
-specklepy
 streamlit
-streamlit-javascript
+ifcopenshell
+pyvista
+vtk
