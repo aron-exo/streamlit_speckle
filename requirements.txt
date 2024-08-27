@@ -1,4 +1,2 @@
-ifcopenshell
 streamlit
-pandas
-plotly
+streamlit-javascript
