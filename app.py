@@ -81,19 +81,18 @@ def create_unique_speckle_classes():
 
 # Create Speckle classes with unique names
 SpeckleClasses = create_unique_speckle_classes()
+
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
-    
     for data in geojson_data_list:
-        features = [feature for feature in data['features'] if feature['geometry']['type'] == 'LineString']
-        
+        features = data['features']
         for feature in features:
-            coordinates = feature['geometry']['coordinates']
-            for lon, lat in coordinates:
-                x, y = convert_to_revit_units(lon, lat)
-                min_x = min(min_x, x)
-                min_y = min(min_y, y)
-    
+            if feature['geometry']['type'] == 'LineString':
+                coordinates = feature['geometry']['coordinates']
+                for lon, lat in coordinates:
+                    x, y = convert_to_revit_units(lon, lat)
+                    min_x = min(min_x, x)
+                    min_y = min(min_y, y)
     return min_x, min_y
 
 def process_all_pipes(data, global_origin):
@@ -140,40 +139,6 @@ def process_all_pipes(data, global_origin):
             pipes.append(pipe)
 
     return pipes
-
-def process_file(file):
-    if isinstance(file, str):  # If it's a file path
-        file_name = file
-        file_extension = os.path.splitext(file)[1].lower()
-        if file_extension == '.geojson':
-            with open(file, 'r') as f:
-                return json.load(f)
-        elif file_extension == '.shp':
-            gdf = gpd.read_file(file)
-            return json.loads(gdf.to_json())
-    else:  # If it's a Streamlit UploadedFile object
-        file_name = file.name
-        file_extension = os.path.splitext(file_name)[1].lower()
-        if file_extension == '.geojson':
-            return json.loads(file.getvalue().decode())
-        elif file_extension == '.shp':
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.shp') as tmp_file:
-                tmp_file.write(file.getvalue())
-                tmp_file_path = tmp_file.name
-            gdf = gpd.read_file(tmp_file_path)
-            os.unlink(tmp_file_path)
-            return json.loads(gdf.to_json())
-    return None
-
-def process_directory(directory):
-    geojson_data_list = []
-    for root, dirs, files in os.walk(directory):
-        for file in files:
-            file_path = os.path.join(root, file)
-            data = process_file(file_path)
-            if data:
-                geojson_data_list.append(data)
-    return geojson_data_list
 
 def main():
     st.title("GeoJSON/Shapefile to Revit Pipes Converter")
@@ -235,38 +200,51 @@ def main():
                     if data:
                         geojson_data_list.append(data)
 
-    if not geojson_data_list:
-        st.error("No valid GeoJSON or Shapefile data found in the uploaded file(s) or folder.")
-        return
+        if not geojson_data_list:
+            st.error("No valid GeoJSON or Shapefile data found in the uploaded file(s) or folder.")
+            return
 
-    # Create a commit object
-    commit_obj = Base()
-    commit_obj["@Revit Pipes From Python"] = all_pipes  # Assuming all_pipes is defined earlier
+        # Process the GeoJSON data into pipes
+        global_origin = find_global_origin(geojson_data_list)
+        all_pipes = []
+        for data in geojson_data_list:
+            pipes = process_all_pipes(data, global_origin)
+            if pipes:
+                all_pipes.extend(pipes)
 
-    if st.button("Upload to Speckle"):
-        try:
-            transport = ServerTransport(client=client, stream_id=stream_id)
+        if not all_pipes:
+            st.error("No pipes could be created from the provided data.")
+            return
 
-            # Send the object
-            object_id = operations.send(commit_obj, [transport])
+        # Create a commit object
+        commit_obj = Base()
+        commit_obj["@Revit Pipes From Python"] = all_pipes
 
-            # Create the commit
-            commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
-            
-            if commit and hasattr(commit, 'id'):
-                result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
-                st.success(f"Successfully processed and uploaded all pipes to Speckle.")
-                st.markdown(f"[View Results on Speckle]({result_url})")
+        if st.button("Upload to Speckle"):
+            try:
+                transport = ServerTransport(client=client, stream_id=stream_id)
 
-                # Embed Speckle viewer
-                speckle_viewer_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit.id}"
-                st.markdown(f"""
-                <iframe src="{speckle_viewer_url}" width="100%" height="600px" frameborder="0"></iframe>
-                """, unsafe_allow_html=True)
-            else:
-                st.error("Failed to create commit. Please check your Speckle configuration and try again.")
-        except Exception as e:
-            st.error(f"An error occurred during the Speckle upload process: {str(e)}")
+                # Send the object
+                object_id = operations.send(commit_obj, [transport])
+
+                # Create the commit
+                commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
+                
+                if commit and hasattr(commit, 'id'):
+                    result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
+                    st.success(f"Successfully processed and uploaded all pipes to Speckle.")
+                    st.markdown(f"[View Results on Speckle]({result_url})")
+
+                    # Embed Speckle viewer
+                    speckle_viewer_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit.id}"
+                    st.markdown(f"""
+                    <iframe src="{speckle_viewer_url}" width="100%" height="600px" frameborder="0"></iframe>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.error("Failed to create commit. Please check your Speckle configuration and try again.")
+            except Exception as e:
+                st.error(f"An error occurred during the Speckle upload process: {str(e)}")
+
 
 if __name__ == "__main__":
     main()
