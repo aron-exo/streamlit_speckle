@@ -11,6 +11,7 @@ from specklepy.objects.geometry import Line, Point
 from specklepy.api.client import SpeckleClient
 from specklepy.transports.server import ServerTransport
 from specklepy.api import operations
+import uuid
 
 # Define your projection (example using UTM Zone 18N)
 utm_proj = Proj(proj='utm', zone=18, ellps='WGS84')
@@ -27,9 +28,11 @@ def convert_to_revit_units(lon, lat):
     x, y = transform(latlon_proj, utm_proj, lon, lat)
     return feet_to_internal_units(x), feet_to_internal_units(y)
 
-# Function to create Speckle classes
-def create_speckle_classes():
-    class Level(Base, speckle_type="Objects.BuiltElements.Level"):
+# Function to create unique Speckle classes
+def create_unique_speckle_classes():
+    unique_id = uuid.uuid4().hex[:8]  # Generate a unique identifier
+
+    class Level(Base, speckle_type=f"Objects.BuiltElements.Level_{unique_id}"):
         name: str = None
         elevation: float = None
 
@@ -37,7 +40,7 @@ def create_speckle_classes():
         name: str = None
         value: object = None
 
-    class RevitPipe(Base, speckle_type="Objects.BuiltElements.Revit.RevitPipe"):
+    class RevitPipe(Base, speckle_type=f"Objects.BuiltElements.Revit.RevitPipe_{unique_id}"):
         family: str = None
         type: str = None
         baseCurve: Line = None
@@ -64,8 +67,8 @@ def create_speckle_classes():
 
     return Level, Parameter, RevitPipe
 
-# Create Speckle classes
-Level, Parameter, RevitPipe = create_speckle_classes()
+# Create Speckle classes with unique names
+Level, Parameter, RevitPipe = create_unique_speckle_classes()
 
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
