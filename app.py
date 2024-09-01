@@ -9,7 +9,6 @@ from pyproj import Proj, transform
 from specklepy.objects import Base
 from specklepy.objects.geometry import Line, Point
 from specklepy.api.client import SpeckleClient
-from specklepy.api.credentials import Account
 from specklepy.transports.server import ServerTransport
 from specklepy.api import operations
 
@@ -17,6 +16,7 @@ from specklepy.api import operations
 utm_proj = Proj(proj='utm', zone=18, ellps='WGS84')
 latlon_proj = Proj(proj='latlong', datum='WGS84')
 
+# Utility functions
 def inches_to_feet(inches):
     return inches / 12
 
@@ -27,38 +27,42 @@ def convert_to_revit_units(lon, lat):
     x, y = transform(latlon_proj, utm_proj, lon, lat)
     return feet_to_internal_units(x), feet_to_internal_units(y)
 
-class Level(Base, speckle_type="Objects.BuiltElements.Level"):
-    name: str = None
-    elevation: float = None
+# Class definitions
+if 'Level' not in globals():
+    class Level(Base, speckle_type="Objects.BuiltElements.Level"):
+        name: str = None
+        elevation: float = None
 
-class Parameter(Base):
-    name: str = None
-    value: object = None
+if 'Parameter' not in globals():
+    class Parameter(Base):
+        name: str = None
+        value: object = None
 
-class RevitPipe(Base, speckle_type="Objects.BuiltElements.Revit.RevitPipe"):
-    family: str = None
-    type: str = None
-    baseCurve: Line = None
-    diameter: float = None
-    level: Level = None
-    systemName: str = None
-    systemType: str = None
-    parameters: Base = None
-    elementId: str = None
+if 'RevitPipe' not in globals():
+    class RevitPipe(Base, speckle_type="Objects.BuiltElements.Revit.RevitPipe"):
+        family: str = None
+        type: str = None
+        baseCurve: Line = None
+        diameter: float = None
+        level: Level = None
+        systemName: str = None
+        systemType: str = None
+        parameters: Base = None
+        elementId: str = None
 
-    def __init__(self, family, type, baseCurve, diameter_inches, level, systemName="", systemType="", parameters=None):
-        super().__init__()
-        self.family = family
-        self.type = type
-        self.baseCurve = baseCurve
-        self.diameter = inches_to_feet(diameter_inches)
-        self.level = level
-        self.systemName = systemName
-        self.systemType = systemType
-        self.parameters = Base()
-        if parameters:
-            for param in parameters:
-                setattr(self.parameters, param.name, param.value)
+        def __init__(self, family, type, baseCurve, diameter_inches, level, systemName="", systemType="", parameters=None):
+            super().__init__()
+            self.family = family
+            self.type = type
+            self.baseCurve = baseCurve
+            self.diameter = inches_to_feet(diameter_inches)
+            self.level = level
+            self.systemName = systemName
+            self.systemType = systemType
+            self.parameters = Base()
+            if parameters:
+                for param in parameters:
+                    setattr(self.parameters, param.name, param.value)
 
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
