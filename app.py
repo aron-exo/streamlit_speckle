@@ -28,47 +28,53 @@ def convert_to_revit_units(lon, lat):
     x, y = transform(latlon_proj, utm_proj, lon, lat)
     return feet_to_internal_units(x), feet_to_internal_units(y)
 
-# Function to create unique Speckle classes
+
 def create_unique_speckle_classes():
     unique_id = uuid.uuid4().hex[:8]  # Generate a unique identifier
 
-    class Level(Base, speckle_type=f"Objects.BuiltElements.Level_{unique_id}"):
-        name: str = None
-        elevation: float = None
+    Level = type(f"Level_{unique_id}", (Base,), {
+        "speckle_type": "Objects.BuiltElements.Level",
+        "name": None,
+        "elevation": None
+    })
 
-    class Parameter(Base):
-        name: str = None
-        value: object = None
+    Parameter = type(f"Parameter_{unique_id}", (Base,), {
+        "name": None,
+        "value": None
+    })
 
-    class RevitPipe(Base, speckle_type=f"Objects.BuiltElements.Revit.RevitPipe_{unique_id}"):
-        family: str = None
-        type: str = None
-        baseCurve: Line = None
-        diameter: float = None
-        level: Level = None
-        systemName: str = None
-        systemType: str = None
-        parameters: Base = None
-        elementId: str = None
+    def revit_pipe_init(self, family, type, baseCurve, diameter_inches, level, systemName="", systemType="", parameters=None):
+        Base.__init__(self)
+        self.family = family
+        self.type = type
+        self.baseCurve = baseCurve
+        self.diameter = diameter_inches / 12  # Convert inches to feet
+        self.level = level
+        self.systemName = systemName
+        self.systemType = systemType
+        self.parameters = Base()
+        if parameters:
+            for param in parameters:
+                setattr(self.parameters, param.name, param.value)
 
-        def __init__(self, family, type, baseCurve, diameter_inches, level, systemName="", systemType="", parameters=None):
-            super().__init__()
-            self.family = family
-            self.type = type
-            self.baseCurve = baseCurve
-            self.diameter = inches_to_feet(diameter_inches)
-            self.level = level
-            self.systemName = systemName
-            self.systemType = systemType
-            self.parameters = Base()
-            if parameters:
-                for param in parameters:
-                    setattr(self.parameters, param.name, param.value)
+    RevitPipe = type(f"RevitPipe_{unique_id}", (Base,), {
+        "speckle_type": "Objects.BuiltElements.Revit.RevitPipe",
+        "family": None,
+        "type": None,
+        "baseCurve": None,
+        "diameter": None,
+        "level": None,
+        "systemName": None,
+        "systemType": None,
+        "parameters": None,
+        "elementId": None,
+        "__init__": revit_pipe_init
+    })
 
     return Level, Parameter, RevitPipe
 
 # Create Speckle classes with unique names
-Level, Parameter, RevitPipe = create_unique_speckle_classes()
+Level, Parameter, RevitPipe = create_unique_speckle_classes()()
 
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
@@ -111,7 +117,7 @@ def process_all_pipes(data, global_origin):
             start = Point(x=start_x, y=start_y, z=0)
             end = Point(x=end_x, y=end_y, z=0)
             
-            diameter_inches = 200 / 25.4
+            diameter_inches = 200 / 25.4  # Convert 200 mm to inches
             system_name = 'Domestic Cold Water'
             system_type = 'Supply'
 
