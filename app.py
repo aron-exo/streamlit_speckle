@@ -27,18 +27,16 @@ def convert_to_revit_units(lon, lat):
     x, y = transform(latlon_proj, utm_proj, lon, lat)
     return feet_to_internal_units(x), feet_to_internal_units(y)
 
-# Class definitions
-if 'Level' not in globals():
+# Function to create Speckle classes
+def create_speckle_classes():
     class Level(Base, speckle_type="Objects.BuiltElements.Level"):
         name: str = None
         elevation: float = None
 
-if 'Parameter' not in globals():
     class Parameter(Base):
         name: str = None
         value: object = None
 
-if 'RevitPipe' not in globals():
     class RevitPipe(Base, speckle_type="Objects.BuiltElements.Revit.RevitPipe"):
         family: str = None
         type: str = None
@@ -63,6 +61,11 @@ if 'RevitPipe' not in globals():
             if parameters:
                 for param in parameters:
                     setattr(self.parameters, param.name, param.value)
+
+    return Level, Parameter, RevitPipe
+
+# Create Speckle classes
+Level, Parameter, RevitPipe = create_speckle_classes()
 
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
@@ -171,7 +174,7 @@ def main():
         input_method = st.radio("", ("Upload File", "Upload Folder"))
 
         geojson_data_list = []
-
+        
         if input_method == "Upload File":
             uploaded_file = st.file_uploader("Choose a file", type=['geojson', 'zip', 'rar', 'shp'])
 
