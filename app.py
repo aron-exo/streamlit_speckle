@@ -27,60 +27,6 @@ def convert_to_revit_units(lon, lat):
     x, y = transformer.transform(lon, lat)
     return feet_to_internal_units(x), feet_to_internal_units(y)
 
-def create_unique_speckle_classes():
-    unique_id = uuid.uuid4().hex[:8]  # Generate a unique identifier
-
-    def create_unique_class(base_name, base_class, speckle_type=None, **attrs):
-        class_name = f"{base_name}_{unique_id}"
-        class_attrs = attrs.copy()
-        if speckle_type:
-            class_attrs['speckle_type'] = speckle_type
-        return type(class_name, (base_class,), class_attrs)
-
-    Level = create_unique_class("Level", Base, 
-                                speckle_type="Objects.BuiltElements.Level",
-                                name=None, 
-                                elevation=None)
-
-    Parameter = create_unique_class("Parameter", Base,
-                                    name=None,
-                                    value=None)
-
-    def revit_pipe_init(self, family, type, baseCurve, diameter_inches, level, systemName="", systemType="", parameters=None):
-        Base.__init__(self)
-        self.family = family
-        self.type = type
-        self.baseCurve = baseCurve
-        self.diameter = diameter_inches / 12  # Convert inches to feet
-        self.level = level
-        self.systemName = systemName
-        self.systemType = systemType
-        self.parameters = Base()
-        if parameters:
-            for param in parameters:
-                setattr(self.parameters, param.name, param.value)
-
-    RevitPipe = create_unique_class("RevitPipe", Base,
-                                    speckle_type="Objects.BuiltElements.Revit.RevitPipe",
-                                    family=None,
-                                    type=None,
-                                    baseCurve=None,
-                                    diameter=None,
-                                    level=None,
-                                    systemName=None,
-                                    systemType=None,
-                                    parameters=None,
-                                    elementId=None,
-                                    __init__=revit_pipe_init)
-
-    return {
-        "Level": Level,
-        "Parameter": Parameter,
-        "RevitPipe": RevitPipe
-    }
-
-# Create Speckle classes with unique names
-SpeckleClasses = create_unique_speckle_classes()
 
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
@@ -94,6 +40,64 @@ def find_global_origin(geojson_data_list):
                     min_x = min(min_x, x)
                     min_y = min(min_y, y)
     return min_x, min_y
+
+def create_unique_speckle_classes():
+    unique_id = uuid.uuid4().hex[:8]  # Generate a unique identifier
+
+    class RevitPipe(Base, speckle_type="Objects.BuiltElements.Revit.Pipe"):
+        baseCurve: "RevitCurve" = None
+        type: "RevitPipeType" = None
+        level: "RevitLevel" = None
+        systemName: str = None
+        diameter: float = None
+
+    class RevitCurve(Base, speckle_type="Objects.BuiltElements.Revit.Curve"):
+        baseLine: Line = None
+        units: str = None
+
+    class RevitPipeType(Base, speckle_type="Objects.BuiltElements.Revit.PipeType"):
+        name: str = None
+        family: str = None
+
+    class RevitLevel(Base, speckle_type="Objects.BuiltElements.Revit.Level"):
+        name: str = None
+        elevation: float = None
+        units: str = None
+
+    return {
+        "RevitPipe": RevitPipe,
+        "RevitCurve": RevitCurve,
+        "RevitPipeType": RevitPipeType,
+        "RevitLevel": RevitLevel
+    }
+
+# Create Speckle classes with unique names
+SpeckleClasses = create_unique_speckle_classes()
+
+def create_revit_pipe(start_point, end_point, diameter, level_elevation):
+    base_curve = SpeckleClasses["RevitCurve"](
+        baseLine=Line(start=start_point, end=end_point),
+        units="m"
+    )
+    
+    pipe_type = SpeckleClasses["RevitPipeType"](
+        name="Standard",
+        family="Pipe Types"
+    )
+    
+    level = SpeckleClasses["RevitLevel"](
+        name="Level 0",
+        elevation=level_elevation,
+        units="m"
+    )
+    
+    return SpeckleClasses["RevitPipe"](
+        baseCurve=base_curve,
+        type=pipe_type,
+        level=level,
+        systemName="Domestic Cold Water",
+        diameter=diameter
+    )
 
 def process_all_pipes(data, global_origin):
     pipes = []
@@ -121,25 +125,13 @@ def process_all_pipes(data, global_origin):
             start = Point(x=start_x, y=start_y, z=0)
             end = Point(x=end_x, y=end_y, z=0)
             
-            diameter_inches = 200 / 25.4  # Convert 200 mm to inches
-            system_name = 'Domestic Cold Water'
-            system_type = 'Supply'
+            diameter = 0.2  # 200 mm in meters
+            level_elevation = 0  # Assuming all pipes are at ground level
 
-            level = SpeckleClasses["Level"](name="Level 0", elevation=0)
-            pipe = SpeckleClasses["RevitPipe"](
-                family="Standard Pipe Types",
-                type="Standard",
-                baseCurve=Line(start=start, end=end),
-                diameter_inches=diameter_inches,
-                level=level,
-                systemName=system_name,
-                systemType=system_type,
-                parameters=[SpeckleClasses["Parameter"](name="Comments", value="Pipe from GeoJSON")]
-            )
+            pipe = create_revit_pipe(start, end, diameter, level_elevation)
             pipes.append(pipe)
 
     return pipes
-
 
 def process_file(file):
     if isinstance(file, str):  # If it's a file path
@@ -253,20 +245,31 @@ def main():
             st.error("No pipes could be created from the provided data.")
             return
 
-        # Create a commit object
-        commit_obj = Base()
-        commit_obj["@Revit Pipes From Python"] = all_pipes
-
+        # Create a Base object and add pipes to it
+        base = Base()
+        base["@Pipes"] = all_pipes
+    
         if st.button("Upload to Speckle"):
             try:
-                transport = ServerTransport(client=client, stream_id=stream_id)
-
-                # Send the object
-                object_id = operations.send(commit_obj, [transport])
-
-                # Create the commit
-                commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
+                st.info("Initiating Speckle upload process...")
                 
+                # Ensure the client is authenticated
+                if not client.account:
+                    st.error("Speckle client is not authenticated. Please check your token.")
+                    return
+    
+                # Create a new transport
+                transport = ServerTransport(client=client, stream_id=stream_id)
+    
+                # Send the object
+                st.info("Sending object to Speckle...")
+                object_id = operations.send(base, [transport])
+                st.success(f"Object sent successfully. Object ID: {object_id}")
+    
+                # Create the commit
+                st.info("Creating commit...")
+                commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
+                    
                 if commit and hasattr(commit, 'id'):
                     result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
                     st.success(f"Successfully processed and uploaded all pipes to Speckle.")
