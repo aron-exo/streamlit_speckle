@@ -2,6 +2,7 @@ import streamlit as st
 import os
 import tempfile
 import zipfile
+import rarfile
 import json
 import geopandas as gpd
 from pyproj import Proj, transform
@@ -119,12 +120,26 @@ def process_all_pipes(data, global_origin):
 
     return pipes
 
-def process_file(file, file_type):
-    if file_type == 'geojson':
-        return json.load(file)
-    elif file_type == 'shapefile':
-        gdf = gpd.read_file(file)
+def process_file(file_path):
+    _, file_extension = os.path.splitext(file_path)
+    if file_extension.lower() == '.geojson':
+        with open(file_path, 'r') as f:
+            return json.load(f)
+    elif file_extension.lower() == '.shp':
+        gdf = gpd.read_file(file_path)
         return json.loads(gdf.to_json())
+    else:
+        return None
+
+def process_directory(directory):
+    geojson_data_list = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            file_path = os.path.join(root, file)
+            data = process_file(file_path)
+            if data:
+                geojson_data_list.append(data)
+    return geojson_data_list
 
 def main():
     st.title("GeoJSON/Shapefile to Revit Pipes Converter")
@@ -148,67 +163,84 @@ def main():
     if selected_stream:
         stream_id = stream_dict[selected_stream]
 
-        uploaded_file = st.file_uploader("Choose a file", type=['geojson', 'zip', 'shp'])
+        st.write("Choose input method:")
+        input_method = st.radio("", ("Upload File", "Upload Folder"))
 
-        if uploaded_file is not None:
-            file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+        geojson_data_list = []
 
-            with tempfile.TemporaryDirectory() as temp_dir:
-                if file_extension == '.zip':
-                    with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
-                        zip_ref.extractall(temp_dir)
+        if input_method == "Upload File":
+            uploaded_file = st.file_uploader("Choose a file", type=['geojson', 'zip', 'rar', 'shp'])
+
+            if uploaded_file is not None:
+                file_extension = os.path.splitext(uploaded_file.name)[1].lower()
+
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    if file_extension in ['.zip', '.rar']:
+                        file_path = os.path.join(temp_dir, uploaded_file.name)
+                        with open(file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
+                        
+                        if file_extension == '.zip':
+                            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                                zip_ref.extractall(temp_dir)
+                        else:  # .rar
+                            with rarfile.RarFile(file_path, 'r') as rar_ref:
+                                rar_ref.extractall(temp_dir)
+                        
+                        geojson_data_list = process_directory(temp_dir)
+                    else:
+                        data = process_file(uploaded_file)
+                        if data:
+                            geojson_data_list.append(data)
+
+        elif input_method == "Upload Folder":
+            uploaded_folder = st.file_uploader("Choose a folder", type=['geojson', 'shp'], accept_multiple_files=True)
+            
+            if uploaded_folder:
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    for uploaded_file in uploaded_folder:
+                        file_path = os.path.join(temp_dir, uploaded_file.name)
+                        with open(file_path, "wb") as f:
+                            f.write(uploaded_file.getbuffer())
                     
-                    geojson_data_list = []
-                    for root, dirs, files in os.walk(temp_dir):
-                        for file in files:
-                            if file.endswith('.geojson'):
-                                with open(os.path.join(root, file), 'r') as f:
-                                    geojson_data_list.append(json.load(f))
-                            elif file.endswith('.shp'):
-                                gdf = gpd.read_file(os.path.join(root, file))
-                                geojson_data_list.append(json.loads(gdf.to_json()))
-                else:
-                    if file_extension == '.geojson':
-                        geojson_data_list = [process_file(uploaded_file, 'geojson')]
-                    elif file_extension == '.shp':
-                        geojson_data_list = [process_file(uploaded_file, 'shapefile')]
+                    geojson_data_list = process_directory(temp_dir)
 
-            if not geojson_data_list:
-                st.error("No valid GeoJSON or Shapefile data found in the uploaded file.")
-                return
+        if not geojson_data_list:
+            st.error("No valid GeoJSON or Shapefile data found in the uploaded file(s) or folder.")
+            return
 
-            global_origin = find_global_origin(geojson_data_list)
-            st.write(f"Global origin: {global_origin}")
+        global_origin = find_global_origin(geojson_data_list)
+        st.write(f"Global origin: {global_origin}")
 
-            all_pipes = []
-            for data in geojson_data_list:
-                pipes = process_all_pipes(data, global_origin)
-                if pipes is not None:
-                    all_pipes.extend(pipes)
+        all_pipes = []
+        for data in geojson_data_list:
+            pipes = process_all_pipes(data, global_origin)
+            if pipes is not None:
+                all_pipes.extend(pipes)
 
-            if not all_pipes:
-                st.error("No pipes were found in the uploaded file(s).")
-                return
+        if not all_pipes:
+            st.error("No pipes were found in the uploaded file(s) or folder.")
+            return
 
-            commit_obj = Base()
-            commit_obj["@Revit Pipes From Python"] = all_pipes
+        commit_obj = Base()
+        commit_obj["@Revit Pipes From Python"] = all_pipes
 
-            if st.button("Upload to Speckle"):
-                transport = ServerTransport(client=client, stream_id=stream_id)
+        if st.button("Upload to Speckle"):
+            transport = ServerTransport(client=client, stream_id=stream_id)
 
-                object_id = operations.send(commit_obj, [transport])
+            object_id = operations.send(commit_obj, [transport])
 
-                commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
-                
-                result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
-                st.success(f"Successfully processed and uploaded all pipes to Speckle.")
-                st.markdown(f"[View Results on Speckle]({result_url})")
+            commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
+            
+            result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
+            st.success(f"Successfully processed and uploaded all pipes to Speckle.")
+            st.markdown(f"[View Results on Speckle]({result_url})")
 
-                # Embed Speckle viewer
-                speckle_viewer_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit.id}"
-                st.markdown(f"""
-                <iframe src="{speckle_viewer_url}" width="100%" height="600px" frameborder="0"></iframe>
-                """, unsafe_allow_html=True)
+            # Embed Speckle viewer
+            speckle_viewer_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit.id}"
+            st.markdown(f"""
+            <iframe src="{speckle_viewer_url}" width="100%" height="600px" frameborder="0"></iframe>
+            """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
