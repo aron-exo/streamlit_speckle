@@ -140,6 +140,43 @@ def process_all_pipes(data, global_origin):
 
     return pipes
 
+
+def process_file(file):
+    if isinstance(file, str):  # If it's a file path
+        file_name = file
+        file_extension = os.path.splitext(file)[1].lower()
+        if file_extension == '.geojson':
+            with open(file, 'r') as f:
+                return json.load(f)
+        elif file_extension == '.shp':
+            gdf = gpd.read_file(file)
+            return json.loads(gdf.to_json())
+    else:  # If it's a Streamlit UploadedFile object
+        file_name = file.name
+        file_extension = os.path.splitext(file_name)[1].lower()
+        if file_extension == '.geojson':
+            return json.loads(file.getvalue().decode())
+        elif file_extension == '.shp':
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.shp') as tmp_file:
+                tmp_file.write(file.getvalue())
+                tmp_file_path = tmp_file.name
+            gdf = gpd.read_file(tmp_file_path)
+            os.unlink(tmp_file_path)
+            return json.loads(gdf.to_json())
+    return None
+
+def process_directory(directory):
+    geojson_data_list = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            file_path = os.path.join(root, file)
+            data = process_file(file_path)
+            if data:
+                geojson_data_list.append(data)
+    return geojson_data_list
+
+# ... (other functions like find_global_origin and process_all_pipes remain the same)
+
 def main():
     st.title("GeoJSON/Shapefile to Revit Pipes Converter")
 
@@ -244,7 +281,6 @@ def main():
                     st.error("Failed to create commit. Please check your Speckle configuration and try again.")
             except Exception as e:
                 st.error(f"An error occurred during the Speckle upload process: {str(e)}")
-
 
 if __name__ == "__main__":
     main()
