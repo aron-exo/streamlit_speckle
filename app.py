@@ -32,16 +32,21 @@ def convert_to_revit_units(lon, lat):
 def create_unique_speckle_classes():
     unique_id = uuid.uuid4().hex[:8]  # Generate a unique identifier
 
-    Level = type(f"Level_{unique_id}", (Base,), {
-        "speckle_type": "Objects.BuiltElements.Level",
-        "name": None,
-        "elevation": None
-    })
+    def create_unique_class(base_name, base_class, speckle_type=None, **attrs):
+        class_name = f"{base_name}_{unique_id}"
+        class_attrs = attrs.copy()
+        if speckle_type:
+            class_attrs['speckle_type'] = speckle_type
+        return type(class_name, (base_class,), class_attrs)
 
-    Parameter = type(f"Parameter_{unique_id}", (Base,), {
-        "name": None,
-        "value": None
-    })
+    Level = create_unique_class("Level", Base, 
+                                speckle_type="Objects.BuiltElements.Level",
+                                name=None, 
+                                elevation=None)
+
+    Parameter = create_unique_class("Parameter", Base,
+                                    name=None,
+                                    value=None)
 
     def revit_pipe_init(self, family, type, baseCurve, diameter_inches, level, systemName="", systemType="", parameters=None):
         Base.__init__(self)
@@ -57,25 +62,27 @@ def create_unique_speckle_classes():
             for param in parameters:
                 setattr(self.parameters, param.name, param.value)
 
-    RevitPipe = type(f"RevitPipe_{unique_id}", (Base,), {
-        "speckle_type": "Objects.BuiltElements.Revit.RevitPipe",
-        "family": None,
-        "type": None,
-        "baseCurve": None,
-        "diameter": None,
-        "level": None,
-        "systemName": None,
-        "systemType": None,
-        "parameters": None,
-        "elementId": None,
-        "__init__": revit_pipe_init
-    })
+    RevitPipe = create_unique_class("RevitPipe", Base,
+                                    speckle_type="Objects.BuiltElements.Revit.RevitPipe",
+                                    family=None,
+                                    type=None,
+                                    baseCurve=None,
+                                    diameter=None,
+                                    level=None,
+                                    systemName=None,
+                                    systemType=None,
+                                    parameters=None,
+                                    elementId=None,
+                                    __init__=revit_pipe_init)
 
-    return Level, Parameter, RevitPipe
+    return {
+        "Level": Level,
+        "Parameter": Parameter,
+        "RevitPipe": RevitPipe
+    }
 
 # Create Speckle classes with unique names
-Level, Parameter, RevitPipe = create_unique_speckle_classes()()
-
+SpeckleClasses = create_unique_speckle_classes()
 def find_global_origin(geojson_data_list):
     min_x, min_y = float('inf'), float('inf')
     
@@ -121,8 +128,8 @@ def process_all_pipes(data, global_origin):
             system_name = 'Domestic Cold Water'
             system_type = 'Supply'
 
-            level = Level(name="Level 0", elevation=0)
-            pipe = RevitPipe(
+            level = SpeckleClasses["Level"](name="Level 0", elevation=0)
+            pipe = SpeckleClasses["RevitPipe"](
                 family="Standard Pipe Types",
                 type="Standard",
                 baseCurve=Line(start=start, end=end),
@@ -130,7 +137,7 @@ def process_all_pipes(data, global_origin):
                 level=level,
                 systemName=system_name,
                 systemType=system_type,
-                parameters=[Parameter(name="Comments", value="Pipe from GeoJSON")]
+                parameters=[SpeckleClasses["Parameter"](name="Comments", value="Pipe from GeoJSON")]
             )
             pipes.append(pipe)
 
