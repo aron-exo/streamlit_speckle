@@ -235,42 +235,38 @@ def main():
                     if data:
                         geojson_data_list.append(data)
 
-        if not geojson_data_list:
-            st.error("No valid GeoJSON or Shapefile data found in the uploaded file(s) or folder.")
-            return
+    if not geojson_data_list:
+        st.error("No valid GeoJSON or Shapefile data found in the uploaded file(s) or folder.")
+        return
 
-        global_origin = find_global_origin(geojson_data_list)
-        st.write(f"Global origin: {global_origin}")
+    # Create a commit object
+    commit_obj = Base()
+    commit_obj["@Revit Pipes From Python"] = all_pipes  # Assuming all_pipes is defined earlier
 
-        all_pipes = []
-        for data in geojson_data_list:
-            pipes = process_all_pipes(data, global_origin)
-            if pipes is not None:
-                all_pipes.extend(pipes)
-
-        if not all_pipes:
-            st.error("No pipes were found in the uploaded file(s) or folder.")
-            return
-
-        commit_obj = Base()
-        commit_obj["@Revit Pipes From Python"] = all_pipes
-
-        if st.button("Upload to Speckle"):
+    if st.button("Upload to Speckle"):
+        try:
             transport = ServerTransport(client=client, stream_id=stream_id)
 
+            # Send the object
             object_id = operations.send(commit_obj, [transport])
 
+            # Create the commit
             commit = client.commit.create(stream_id, object_id, message="Sent RevitPipes from Streamlit app")
             
-            result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
-            st.success(f"Successfully processed and uploaded all pipes to Speckle.")
-            st.markdown(f"[View Results on Speckle]({result_url})")
+            if commit and hasattr(commit, 'id'):
+                result_url = f"{speckle_host}/streams/{stream_id}/commits/{commit.id}"
+                st.success(f"Successfully processed and uploaded all pipes to Speckle.")
+                st.markdown(f"[View Results on Speckle]({result_url})")
 
-            # Embed Speckle viewer
-            speckle_viewer_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit.id}"
-            st.markdown(f"""
-            <iframe src="{speckle_viewer_url}" width="100%" height="600px" frameborder="0"></iframe>
-            """, unsafe_allow_html=True)
+                # Embed Speckle viewer
+                speckle_viewer_url = f"https://speckle.xyz/embed?stream={stream_id}&commit={commit.id}"
+                st.markdown(f"""
+                <iframe src="{speckle_viewer_url}" width="100%" height="600px" frameborder="0"></iframe>
+                """, unsafe_allow_html=True)
+            else:
+                st.error("Failed to create commit. Please check your Speckle configuration and try again.")
+        except Exception as e:
+            st.error(f"An error occurred during the Speckle upload process: {str(e)}")
 
 if __name__ == "__main__":
     main()
