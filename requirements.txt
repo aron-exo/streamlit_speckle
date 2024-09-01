@@ -1,3 +1,4 @@
 streamlit
 specklepy
 geopandas
+rarfile
