@@ -143,16 +143,29 @@ def process_all_pipes(data, global_origin):
 
     return pipes
 
-def process_file(file_path):
-    _, file_extension = os.path.splitext(file_path)
-    if file_extension.lower() == '.geojson':
-        with open(file_path, 'r') as f:
-            return json.load(f)
-    elif file_extension.lower() == '.shp':
-        gdf = gpd.read_file(file_path)
-        return json.loads(gdf.to_json())
-    else:
-        return None
+def process_file(file):
+    if isinstance(file, str):  # If it's a file path
+        file_name = file
+        file_extension = os.path.splitext(file)[1].lower()
+        if file_extension == '.geojson':
+            with open(file, 'r') as f:
+                return json.load(f)
+        elif file_extension == '.shp':
+            gdf = gpd.read_file(file)
+            return json.loads(gdf.to_json())
+    else:  # If it's a Streamlit UploadedFile object
+        file_name = file.name
+        file_extension = os.path.splitext(file_name)[1].lower()
+        if file_extension == '.geojson':
+            return json.loads(file.getvalue().decode())
+        elif file_extension == '.shp':
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.shp') as tmp_file:
+                tmp_file.write(file.getvalue())
+                tmp_file_path = tmp_file.name
+            gdf = gpd.read_file(tmp_file_path)
+            os.unlink(tmp_file_path)
+            return json.loads(gdf.to_json())
+    return None
 
 def process_directory(directory):
     geojson_data_list = []
@@ -197,35 +210,32 @@ def main():
             if uploaded_file is not None:
                 file_extension = os.path.splitext(uploaded_file.name)[1].lower()
 
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    if file_extension == '.zip':
-                        file_path = os.path.join(temp_dir, uploaded_file.name)
-                        with open(file_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
+                if file_extension == '.zip':
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        zip_path = os.path.join(temp_dir, uploaded_file.name)
+                        with open(zip_path, "wb") as f:
+                            f.write(uploaded_file.getvalue())
                         
                         try:
-                            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
                                 zip_ref.extractall(temp_dir)
                             geojson_data_list = process_directory(temp_dir)
                         except zipfile.BadZipFile:
                             st.error("The uploaded file is not a valid ZIP file.")
                             return
-                    else:
-                        data = process_file(uploaded_file)
-                        if data:
-                            geojson_data_list.append(data)
+                else:
+                    data = process_file(uploaded_file)
+                    if data:
+                        geojson_data_list.append(data)
 
         elif input_method == "Upload Folder":
-            uploaded_folder = st.file_uploader("Choose files from a folder", type=['geojson', 'shp'], accept_multiple_files=True)
+            uploaded_files = st.file_uploader("Choose files from a folder", type=['geojson', 'shp'], accept_multiple_files=True)
             
-            if uploaded_folder:
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    for uploaded_file in uploaded_folder:
-                        file_path = os.path.join(temp_dir, uploaded_file.name)
-                        with open(file_path, "wb") as f:
-                            f.write(uploaded_file.getbuffer())
-                    
-                    geojson_data_list = process_directory(temp_dir)
+            if uploaded_files:
+                for uploaded_file in uploaded_files:
+                    data = process_file(uploaded_file)
+                    if data:
+                        geojson_data_list.append(data)
 
         if not geojson_data_list:
             st.error("No valid GeoJSON or Shapefile data found in the uploaded file(s) or folder.")
