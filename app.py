@@ -5,7 +5,7 @@ import zipfile
 import rarfile
 import json
 import geopandas as gpd
-from pyproj import Proj, transform
+from pyproj import Proj, Transformer
 from specklepy.objects import Base
 from specklepy.objects.geometry import Line, Point
 from specklepy.api.client import SpeckleClient
@@ -14,8 +14,7 @@ from specklepy.api import operations
 import uuid
 
 # Define your projection (example using UTM Zone 18N)
-utm_proj = Proj(proj='utm', zone=18, ellps='WGS84')
-latlon_proj = Proj(proj='latlong', datum='WGS84')
+transformer = Transformer.from_crs("EPSG:4326", "EPSG:32618", always_xy=True)
 
 # Utility functions
 def inches_to_feet(inches):
@@ -25,9 +24,8 @@ def feet_to_internal_units(feet):
     return feet * 0.3048  # Convert feet to meters (Revit's internal unit)
 
 def convert_to_revit_units(lon, lat):
-    x, y = transform(latlon_proj, utm_proj, lon, lat)
+    x, y = transformer.transform(lon, lat)
     return feet_to_internal_units(x), feet_to_internal_units(y)
-
 
 def create_unique_speckle_classes():
     unique_id = uuid.uuid4().hex[:8]  # Generate a unique identifier
@@ -200,7 +198,7 @@ def main():
         stream_id = stream_dict[selected_stream]
 
         st.write("Choose input method:")
-        input_method = st.radio("", ("Upload File", "Upload Folder"))
+        input_method = st.radio("Input method", ("Upload File", "Upload Folder"), label_visibility="collapsed")
 
         geojson_data_list = []
 
