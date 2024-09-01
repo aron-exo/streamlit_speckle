@@ -190,34 +190,33 @@ def main():
         input_method = st.radio("", ("Upload File", "Upload Folder"))
 
         geojson_data_list = []
-        
+
         if input_method == "Upload File":
-            uploaded_file = st.file_uploader("Choose a file", type=['geojson', 'zip', 'rar', 'shp'])
+            uploaded_file = st.file_uploader("Choose a file", type=['geojson', 'zip', 'shp'])
 
             if uploaded_file is not None:
                 file_extension = os.path.splitext(uploaded_file.name)[1].lower()
 
                 with tempfile.TemporaryDirectory() as temp_dir:
-                    if file_extension in ['.zip', '.rar']:
+                    if file_extension == '.zip':
                         file_path = os.path.join(temp_dir, uploaded_file.name)
                         with open(file_path, "wb") as f:
                             f.write(uploaded_file.getbuffer())
                         
-                        if file_extension == '.zip':
+                        try:
                             with zipfile.ZipFile(file_path, 'r') as zip_ref:
                                 zip_ref.extractall(temp_dir)
-                        else:  # .rar
-                            with rarfile.RarFile(file_path, 'r') as rar_ref:
-                                rar_ref.extractall(temp_dir)
-                        
-                        geojson_data_list = process_directory(temp_dir)
+                            geojson_data_list = process_directory(temp_dir)
+                        except zipfile.BadZipFile:
+                            st.error("The uploaded file is not a valid ZIP file.")
+                            return
                     else:
                         data = process_file(uploaded_file)
                         if data:
                             geojson_data_list.append(data)
 
         elif input_method == "Upload Folder":
-            uploaded_folder = st.file_uploader("Choose a folder", type=['geojson', 'shp'], accept_multiple_files=True)
+            uploaded_folder = st.file_uploader("Choose files from a folder", type=['geojson', 'shp'], accept_multiple_files=True)
             
             if uploaded_folder:
                 with tempfile.TemporaryDirectory() as temp_dir:
